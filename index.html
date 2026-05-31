@@ -350,6 +350,7 @@ function pts(ph,pa,rh,ra){
 }
 
 const defaultPool=()=>({poolName:"World Cup 2026 Predictor",adminName:"Fama",stake:5,adminPin:"1234",results:{},predictions:{}});
+const mergePool=d=>({...defaultPool(),...d,results:d.results||{},predictions:d.predictions||{}});
 
 let pool=defaultPool();
 let grpFilter={predict:"ALL",board:"ALL",admin:"ALL"};
@@ -360,13 +361,17 @@ let myName=localStorage.getItem("wc26_name")||"";
 
 // ── GIST API ────────────────────────────────────────────
 async function gistRead(){
-  const r=await fetch(`https://api.github.com/gists/${GIST_ID}`,{headers:{Authorization:`token ${GH_TOKEN}`,Accept:"application/vnd.github.v3+json"}});
+  // Use raw URL for reading - no auth needed, no CORS issues
+  const bust=Date.now();
+  const rawUrl=`https://gist.githubusercontent.com/Fama201/${GIST_ID}/raw/${GIST_FILE}?t=${bust}`;
+  const r=await fetch(rawUrl,{cache:"no-store"});
   if(!r.ok)throw new Error("read failed "+r.status);
-  const d=await r.json();
-  const content=d.files[GIST_FILE]?.content;
-  return content?JSON.parse(content):null;
+  const text=await r.text();
+  if(!text||text.trim()==="{}") return null;
+  return JSON.parse(text);
 }
 async function gistWrite(data){
+  if(!GH_TOKEN){throw new Error("No token - go to Admin tab to set it");}
   const r=await fetch(`https://api.github.com/gists/${GIST_ID}`,{
     method:"PATCH",
     headers:{Authorization:`token ${GH_TOKEN}`,Accept:"application/vnd.github.v3+json","Content-Type":"application/json"},
@@ -378,11 +383,12 @@ async function gistWrite(data){
 async function loadData(){
   try{
     const d=await gistRead();
-    if(d){pool=d;}
+    if(d){pool=mergePool(d);}
+    else{pool=defaultPool();}
     renderAll();
   }catch(e){
     console.error("load error",e);
-    setLoading(false,"Failed to load. Check your connection.");
+    setLoading(false,"Failed to load. Try refreshing the page.");
   }
   setLoading(false);
 }
@@ -770,7 +776,9 @@ function renderRules(){
 
 // ── ADMIN ───────────────────────────────────────────────
 function tryPin(){
-  if(document.getElementById("pin-input").value===pool.adminPin){
+  const entered=document.getElementById("pin-input").value;
+  const correctPin=pool.adminPin||"1234";
+  if(entered===correctPin){
     adminOk=true;
     document.getElementById("admin-gate").style.display="none";
     document.getElementById("admin-panel").style.display="block";
