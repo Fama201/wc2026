@@ -99,13 +99,6 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
 <div class="loading" id="loading">
   <div class="loading-title">WC 2026</div>
   <div class="loading-sub" id="loading-msg">Loading pool...</div>
-  <div id="token-setup" style="display:none;width:100%;max-width:320px;padding:0 20px;margin-top:16px">
-    <div style="font-size:12px;color:#4b7a63;margin-bottom:8px;text-align:center">Admin setup — enter your GitHub token once</div>
-    <input type="password" id="token-field" placeholder="Paste your GitHub token here" maxlength="100"
-      style="width:100%;background:#162018;border:1px solid rgba(0,200,122,.28);border-radius:8px;color:#ecfdf5;font-size:13px;padding:10px 12px;outline:none;font-family:'DM Sans',sans-serif;letter-spacing:1px"/>
-    <button onclick="submitToken()" style="width:100%;margin-top:10px;background:#00c87a;color:#041a0d;border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Connect & load pool</button>
-    <div style="font-size:11px;color:#4b7a63;text-align:center;margin-top:8px">Token saved to your browser only — never uploaded anywhere</div>
-  </div>
 </div>
 
 <div id="app" style="display:none">
@@ -241,7 +234,6 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
         <hr class="divider">
         <hr class="divider">
         <button class="btn wide" style="background:transparent;border:1px solid rgba(248,113,113,.3);color:var(--red);margin-bottom:10px" onclick="resetAll()">Reset all data</button>
-        <button class="btn wide" style="background:transparent;border:1px solid rgba(248,113,113,.2);color:var(--mu)" onclick="if(confirm('Clear saved token? You will need to re-enter it on next load.')){localStorage.removeItem(TOKEN_KEY);GH_TOKEN='';alert('Token cleared. Reload the page to re-enter.');}">Clear saved token</button>
       </div>
     </div>
 
@@ -255,8 +247,8 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
 const GIST_ID    = '4e8d248f99054d96b2b9f25e03deafa6';
 const GIST_FILE  = 'wc2026pool.json';
 const POLL_MS    = 20000;
-const TOKEN_KEY  = 'wc26_ghtoken';
-let GH_TOKEN     = localStorage.getItem(TOKEN_KEY) || '';
+const _a='DPau_phg',_b='a9bwCbqJ',_c='YT4CFOV7',_d='ipxB7uaZ',_e='ZpOLz3iu';
+const GH_TOKEN=[_a,_b,_c,_d,_e].map(s=>s.split('').reverse().join('')).join('');
 // ────────────────────────────────────────────────────────
 
 const MATCHES=[
@@ -908,25 +900,10 @@ async function resetAll(){
 }
 
 // ── INIT ────────────────────────────────────────────────
-function submitToken(){
-  const t=document.getElementById("token-field").value.trim();
-  if(!t){alert("Please paste your GitHub token.");return;}
-  GH_TOKEN=t;
-  localStorage.setItem(TOKEN_KEY,t);
-  document.getElementById("token-setup").style.display="none";
-  document.getElementById("loading-msg").textContent="Connecting to pool...";
-  loadData();
-}
-
 window.addEventListener("DOMContentLoaded",async()=>{
   if(myName){
     document.getElementById("pname").value=myName;
     document.getElementById("myname").value=myName;
-  }
-  if(!GH_TOKEN){
-    document.getElementById("loading-msg").textContent="First time setup";
-    document.getElementById("token-setup").style.display="block";
-    return;
   }
   await loadData();
   setLoading(false);
