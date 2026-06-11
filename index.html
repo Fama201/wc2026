@@ -106,7 +106,7 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
     <div class="hero-eye">FIFA World Cup 2026</div>
     <div class="hero-title" id="hero-name">World Cup 2026 Predictor</div>
     <div class="hero-meta">
-      <span>Commissioner: <strong style="color:var(--g)" id="hero-admin">Fama</strong></span>
+      <span>Commissioner: <strong style="color:var(--g)" id="hero-admin"></strong></span>
       <span class="dot">·</span><span id="hero-players">0 players</span>
       <span class="dot">·</span><span id="hero-stake">£5/match</span>
       <span class="dot">·</span><span id="hero-done">0/72 done</span>
@@ -194,13 +194,13 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
         <div id="rules-gen"></div>
       </div>
       <div style="background:var(--fa);border:1px solid var(--b2);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--mu);text-align:center">
-        Commissioner: <strong style="color:var(--g)" id="rules-admin">Fama</strong>
+        Commissioner: <strong style="color:var(--g)" id="rules-admin"></strong>
       </div>
     </div>
 
     <!-- ADMIN -->
     <div class="sec" id="sec-admin">
-      <div class="sec-title" id="admin-title">Admin — Fama</div>
+      <div class="sec-title" id="admin-title">Admin</div>
       <div id="admin-gate">
         <div class="card" style="text-align:center;padding:24px 16px">
           <div style="font-size:14px;font-weight:500;margin-bottom:12px">Enter admin PIN</div>
@@ -408,6 +408,7 @@ async function loadData(){
     const d=await gistRead();
     if(d){pool=mergePool(d);}
     else{pool=defaultPool();}
+    autoProgressKnockouts();
     renderAll();
   }catch(e){
     console.error("load error",e);
@@ -521,7 +522,186 @@ function goTab(t){
 }
 
 // ── RENDER ALL ──────────────────────────────────────────
+// ── AUTO-PROGRESSION LOGIC ────────────────────────────────────────────────────
+//
+// Group standings: points, then goal diff, then goals scored
+// R32: 1st/2nd slots auto-fill from group standings
+//      3rd place slots = manual (admin fills after group stage ends)
+// R32 onwards: winner of match X auto-fills next round slot
+//
+// BRACKET MAP - which match feeds which slot:
+// R16:
+//   m89: W74 vs W77   m90: W73 vs W75
+//   m91: W76 vs W78   m92: W79 vs W80
+//   m93: W83 vs W84   m94: W81 vs W82
+//   m95: W86 vs W88   m96: W85 vs W87
+// QF:
+//   m97: W89 vs W90   m98: W93 vs W94
+//   m99: W91 vs W92   m100: W95 vs W96
+// SF:
+//   m101: W97 vs W98  m102: W99 vs W100
+// 3RD: m103: L101 vs L102
+// FINAL: m104: W101 vs W102
+
+// Match ID to slot mapping for knockout progression
+const BRACKET = {
+  // R16 - which R32 match winners feed each R16 slot
+  'm89': {home:'W74', away:'W77'},
+  'm90': {home:'W73', away:'W75'},
+  'm91': {home:'W76', away:'W78'},
+  'm92': {home:'W79', away:'W80'},
+  'm93': {home:'W83', away:'W84'},
+  'm94': {home:'W81', away:'W82'},
+  'm95': {home:'W86', away:'W88'},
+  'm96': {home:'W85', away:'W87'},
+  // QF
+  'm97': {home:'W89', away:'W90'},
+  'm98': {home:'W93', away:'W94'},
+  'm99': {home:'W91', away:'W92'},
+  'm100':{home:'W95', away:'W96'},
+  // SF
+  'm101':{home:'W97', away:'W98'},
+  'm102':{home:'W99', away:'W100'},
+  // 3rd place
+  'm103':{home:'L101',away:'L102'},
+  // Final
+  'm104':{home:'W101',away:'W102'},
+};
+
+// R32 group slots - which group position fills each R32 match slot
+const R32_GROUP_SLOTS = {
+  'm73': {home:{pos:'2nd',grp:'A'}, away:{pos:'2nd',grp:'B'}},
+  'm76': {home:{pos:'1st',grp:'C'}, away:{pos:'2nd',grp:'F'}},
+  'm75': {home:{pos:'1st',grp:'F'}, away:{pos:'2nd',grp:'C'}},
+  'm78': {home:{pos:'2nd',grp:'E'}, away:{pos:'2nd',grp:'I'}},
+  'm84': {home:{pos:'1st',grp:'H'}, away:{pos:'2nd',grp:'J'}},
+  'm83': {home:{pos:'2nd',grp:'K'}, away:{pos:'2nd',grp:'L'}},
+  'm88': {home:{pos:'2nd',grp:'D'}, away:{pos:'2nd',grp:'G'}},
+  'm86': {home:{pos:'1st',grp:'J'}, away:{pos:'2nd',grp:'H'}},
+  // These have one auto + one manual (3rd place) slot
+  'm74': {home:{pos:'1st',grp:'E'}, away:null},  // away = 3rd manual
+  'm77': {home:{pos:'1st',grp:'I'}, away:null},
+  'm79': {home:{pos:'1st',grp:'A'}, away:null},
+  'm80': {home:{pos:'1st',grp:'L'}, away:null},
+  'm82': {home:{pos:'1st',grp:'G'}, away:null},
+  'm81': {home:{pos:'1st',grp:'D'}, away:null},
+  'm85': {home:{pos:'1st',grp:'B'}, away:null},
+  'm87': {home:{pos:'1st',grp:'K'}, away:null},
+};
+
+function calcGroupStandings(grp) {
+  // Get all group stage matches for this group
+  const grpMatches = MATCHES.filter(m => m.grp === grp);
+  const teams = {};
+
+  grpMatches.forEach(m => {
+    if (!teams[m.home]) teams[m.home] = {name:m.home,p:0,w:0,d:0,l:0,gf:0,ga:0,gd:0,pts:0};
+    if (!teams[m.away]) teams[m.away] = {name:m.away,p:0,w:0,d:0,l:0,gf:0,ga:0,gd:0,pts:0};
+    const r = pool.results?.[m.id];
+    if (!r || r.h === null || r.a === null || !r.locked) return;
+    const h = +r.h, a = +r.a;
+    teams[m.home].p++; teams[m.away].p++;
+    teams[m.home].gf += h; teams[m.home].ga += a; teams[m.home].gd += h-a;
+    teams[m.away].gf += a; teams[m.away].ga += h; teams[m.away].gd += a-h;
+    if (h > a) { teams[m.home].w++; teams[m.home].pts+=3; teams[m.away].l++; }
+    else if (h < a) { teams[m.away].w++; teams[m.away].pts+=3; teams[m.home].l++; }
+    else { teams[m.home].d++; teams[m.home].pts+=1; teams[m.away].d++; teams[m.away].pts+=1; }
+  });
+
+  return Object.values(teams).sort((a,b) =>
+    b.pts-a.pts || b.gd-a.gd || b.gf-a.gf
+  );
+}
+
+function getGroupPos(pos, grp) {
+  const standings = calcGroupStandings(grp);
+  if (pos === '1st') return standings[0]?.name || null;
+  if (pos === '2nd') return standings[1]?.name || null;
+  return null;
+}
+
+function getMatchWinner(mid) {
+  const r = pool.results?.[mid];
+  if (!r || r.h === null || r.a === null || !r.locked) return null;
+  const m = MATCHES.find(x => x.id === mid);
+  if (!m) return null;
+  if (+r.h > +r.a) return m.home;
+  if (+r.a > +r.h) return m.away;
+  return null; // draw - shouldn't happen in knockouts
+}
+
+function getMatchLoser(mid) {
+  const r = pool.results?.[mid];
+  if (!r || r.h === null || r.a === null || !r.locked) return null;
+  const m = MATCHES.find(x => x.id === mid);
+  if (!m) return null;
+  if (+r.h > +r.a) return m.away;
+  if (+r.a > +r.h) return m.home;
+  return null;
+}
+
+function autoProgressKnockouts() {
+  // 1. Fill R32 slots from group standings (deterministic ones only)
+  Object.entries(R32_GROUP_SLOTS).forEach(([mid, slots]) => {
+    const m = MATCHES.find(x => x.id === mid);
+    if (!m) return;
+
+    // Home slot
+    if (slots.home) {
+      const team = getGroupPos(slots.home.pos, slots.home.grp);
+      if (team && (m.home.startsWith('1st') || m.home.startsWith('2nd') || m.home === 'TBD')) {
+        m.home = team;
+      }
+    }
+    // Away slot (only if not a 3rd-place manual slot)
+    if (slots.away) {
+      const team = getGroupPos(slots.away.pos, slots.away.grp);
+      if (team && (m.away.startsWith('1st') || m.away.startsWith('2nd') || m.away === 'TBD')) {
+        m.away = team;
+      }
+    }
+  });
+
+  // 2. Fill R16 through Final from match winners
+  Object.entries(BRACKET).forEach(([mid, slots]) => {
+    const m = MATCHES.find(x => x.id === mid);
+    if (!m) return;
+
+    // Resolve home slot
+    if (slots.home.startsWith('W')) {
+      const srcMid = 'm' + slots.home.slice(1);
+      const winner = getMatchWinner(srcMid);
+      if (winner && (m.home.startsWith('W') || m.home === 'TBD')) {
+        m.home = winner;
+      }
+    } else if (slots.home.startsWith('L')) {
+      const srcMid = 'm' + slots.home.slice(1);
+      const loser = getMatchLoser(srcMid);
+      if (loser && (m.home.startsWith('L') || m.home === 'TBD')) {
+        m.home = loser;
+      }
+    }
+
+    // Resolve away slot
+    if (slots.away.startsWith('W')) {
+      const srcMid = 'm' + slots.away.slice(1);
+      const winner = getMatchWinner(srcMid);
+      if (winner && (m.away.startsWith('W') || m.away === 'TBD')) {
+        m.away = winner;
+      }
+    } else if (slots.away.startsWith('L')) {
+      const srcMid = 'm' + slots.away.slice(1);
+      const loser = getMatchLoser(srcMid);
+      if (loser && (m.away.startsWith('L') || m.away === 'TBD')) {
+        m.away = loser;
+      }
+    }
+  });
+}
+
+
 function renderAll(){
+  autoProgressKnockouts();
   updateHero();
   renderPredict();
   filterBtns("pfilters","predict");
@@ -535,6 +715,10 @@ function updateHero(){
   document.getElementById("hero-players").textContent=allPlayers().length+" players";
   document.getElementById("hero-stake").textContent="£"+pool.stake+"/match";
   document.getElementById("hero-done").textContent=doneMatches().length+"/104 done";
+  const at=document.getElementById("admin-title");
+  if(at) at.textContent="Admin — "+pool.adminName;
+  const ra=document.getElementById("rules-admin");
+  if(ra) ra.textContent=pool.adminName;
 }
 
 // ── PREDICT ─────────────────────────────────────────────
@@ -832,7 +1016,18 @@ async function saveSettings(){
 }
 function renderAdminMatches(){
   filterBtns("afilters","admin");
+  autoProgressKnockouts();
   let html="";
+  // Show helper banner for knockout rounds
+  const ko=['R32','R16','QF','SF','3RD','FNL'];
+  if(ko.includes(grpFilter.admin)){
+    const needs3rd=MATCHES.filter(m=>m.grp==='R32'&&(m.home.startsWith('3rd')||m.away.startsWith('3rd')));
+    if(needs3rd.length>0&&grpFilter.admin==='R32'){
+      html+=`<div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--gold)">
+        ⚠️ <strong>${needs3rd.length} match(es)</strong> still need the 3rd-place team entered manually after the group stage ends.
+      </div>`;
+    }
+  }
   Object.entries(groupedFor("admin")).sort().forEach(([g,ms])=>{
     html+=`<div class="grp-hdr">Group ${g}</div>`;
     ms.forEach(m=>{
