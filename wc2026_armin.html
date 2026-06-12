@@ -377,6 +377,7 @@ const mergePool=d=>({...defaultPool(),...d,results:d.results||{},predictions:d.p
 
 let pool=defaultPool();
 let grpFilter={predict:"ALL",board:"ALL",admin:"ALL"};
+let sortByDate={predict:false,board:false};
 let adminOk=false;
 let pollTimer=null;
 let saving=false;
@@ -488,18 +489,42 @@ function avHTML(name,size){
 }
 
 function filterBtns(id,key){
-  document.getElementById(id).innerHTML=["ALL",...GROUPS].map(g=>`<button class="fbtn" style="background:${grpFilter[key]===g?"var(--g)":"var(--fa)"};color:${grpFilter[key]===g?"#041a0d":"var(--mu)"}" onclick="setFilter('${key}','${g}')">${g}</button>`).join("");
+  const sortToggle=sortByDate[key]!==undefined?`<button class="fbtn" style="background:${sortByDate[key]?"var(--gold)":"var(--fa)"};color:${sortByDate[key]?"#041a0d":"var(--mu)"};margin-left:6px" onclick="toggleDateSort('${key}')">${sortByDate[key]?"📅 By date":"⚽ By group"}</button>`:"";
+  document.getElementById(id).innerHTML=["ALL",...GROUPS].map(g=>`<button class="fbtn" style="background:${grpFilter[key]===g?"var(--g)":"var(--fa)"};color:${grpFilter[key]===g?"#041a0d":"var(--mu)"}" onclick="setFilter('${key}','${g}')">${g}</button>`).join("")+sortToggle;
+}
+function toggleDateSort(key){
+  sortByDate[key]=!sortByDate[key];
+  if(key==="predict")renderPredict();
+  if(key==="board")renderBoard();
 }
 function setFilter(key,g){grpFilter[key]=g;if(key==="predict")renderPredict();if(key==="board")renderBoard();if(key==="admin")renderAdminMatches();}
 
 function byGroup(matches){
   const g={};
-  matches.filter(m=>grpFilter[Object.keys(grpFilter)[0]]==="ALL"||true).forEach(m=>{(g[m.grp]=g[m.grp]||[]).push(m);});
+  matches.forEach(m=>{(g[m.grp]=g[m.grp]||[]).push(m);});
   return g;
 }
 function groupedFor(key){
   const g={};
   MATCHES.filter(m=>grpFilter[key]==="ALL"||m.grp===grpFilter[key]).forEach(m=>{(g[m.grp]=g[m.grp]||[]).push(m);});
+  return g;
+}
+function sortedByDate(key){
+  // Returns matches sorted by date+time, filtered by group if set
+  const months={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+  function matchSortKey(m){
+    const [d,mo]=m.date.split(' ');
+    const [h,min]=m.time.replace(' BST','').split(':');
+    return (months[mo]||0)*1000000 + (+d)*10000 + (+h)*100 + (+min);
+  }
+  return MATCHES
+    .filter(m=>grpFilter[key]==="ALL"||m.grp===grpFilter[key])
+    .sort((a,b)=>matchSortKey(a)-matchSortKey(b));
+}
+function byDate(matches){
+  // Group by date string for rendering
+  const g={};
+  matches.forEach(m=>{(g[m.date]=g[m.date]||[]).push(m);});
   return g;
 }
 
@@ -739,8 +764,12 @@ function renderPredict(){
   const pn=myName.trim();
   filterBtns("pfilters","predict");
   let html="";
-  Object.entries(groupedFor("predict")).sort().forEach(([g,ms])=>{
-    html+=`<div class="grp-hdr">Group ${g}</div>`;
+  const predictList = sortByDate.predict ? (() => {
+    const dated=byDate(sortedByDate("predict"));
+    return Object.keys(dated).map(date=>({header:`📅 ${date}`,matches:dated[date]}));
+  })() : Object.entries(groupedFor("predict")).sort().map(([g,ms])=>({header:`Group ${g}`,matches:ms}));
+  predictList.forEach(({header,matches:ms})=>{
+    html+=`<div class="grp-hdr">${header}</div>`;
     ms.forEach(m=>{
       const lk=isLocked(m.id),hr=hasRes(m.id),r=res(m.id);
       const lp=getLocalPred(m.id);
@@ -865,8 +894,12 @@ function renderBoard(){
   const players=allPlayers();
   let html="";
   if(!players.length){document.getElementById("board-list").innerHTML="<div style='text-align:center;padding:40px;color:var(--mu)'>No predictions yet.</div>";return;}
-  Object.entries(groupedFor("board")).sort().forEach(([g,ms])=>{
-    html+=`<div class="grp-hdr">Group ${g}</div>`;
+  const boardList = sortByDate.board ? (() => {
+    const dated=byDate(sortedByDate("board"));
+    return Object.keys(dated).map(date=>({header:`📅 ${date}`,matches:dated[date]}));
+  })() : Object.entries(groupedFor("board")).sort().map(([g,ms])=>({header:`Group ${g}`,matches:ms}));
+  boardList.forEach(({header,matches:ms})=>{
+    html+=`<div class="grp-hdr">${header}</div>`;
     ms.forEach(m=>{
       const r=res(m.id),hr=hasRes(m.id),lk=isLocked(m.id);
       const preds=predsOf(m.id);
