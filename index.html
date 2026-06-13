@@ -774,33 +774,39 @@ function autoProgressKnockouts() {
 
 
 function updateChatBadge(){
-  const tabs=document.querySelectorAll('.tab');
-  const TABS_ARR=["predict","chat","myscores","board","standings","rules","admin"];
-  const chatIdx=TABS_ARR.indexOf("chat");
-  if(chatIdx<0||!tabs[chatIdx]) return;
-  const existing=tabs[chatIdx].querySelector('.tab-badge');
-  if(chatBadgeCount>0){
-    if(existing){existing.textContent=chatBadgeCount;}
-    else{const b=document.createElement('span');b.className='tab-badge';b.textContent=chatBadgeCount;tabs[chatIdx].appendChild(b);}
-  } else {
-    if(existing) existing.remove();
-  }
+  try{
+    const tabs=document.querySelectorAll('.tab');
+    if(!tabs||!tabs.length) return;
+    const TABS_ARR=["predict","chat","myscores","board","standings","rules","admin"];
+    const chatIdx=TABS_ARR.indexOf("chat");
+    if(chatIdx<0||!tabs[chatIdx]) return;
+    const existing=tabs[chatIdx].querySelector('.tab-badge');
+    if(chatBadgeCount>0){
+      if(existing){existing.textContent=chatBadgeCount;}
+      else{const b=document.createElement('span');b.className='tab-badge';b.textContent=chatBadgeCount;tabs[chatIdx].appendChild(b);}
+    } else {
+      if(existing) existing.remove();
+    }
+  }catch(e){}
 }
 
 function renderAll(){
   autoProgressKnockouts();
   updateHero();
-  // Update chat badge if not on chat tab
-  const activeTab=document.querySelector('.tab.on');
-  const tabsArr=document.querySelectorAll('.tab');
-  const TABS_ARR=["predict","chat","myscores","board","standings","rules","admin"];
-  let currentTab='predict';
-  tabsArr.forEach((t,i)=>{if(t.classList.contains('on'))currentTab=TABS_ARR[i];});
-  if(currentTab!=='chat'){
-    const msgs=pool.chat||[];
-    const newMsgs=msgs.filter(m=>m.ts>lastSeenChat);
-    if(newMsgs.length>0){chatBadgeCount=newMsgs.length;updateChatBadge();}
-  }
+  // Update chat badge safely - only after DOM is ready
+  try{
+    const tabsArr=document.querySelectorAll('.tab');
+    if(tabsArr&&tabsArr.length>0){
+      const TABS_ARR=["predict","chat","myscores","board","standings","rules","admin"];
+      let currentTab='predict';
+      tabsArr.forEach((t,i)=>{if(t.classList.contains('on'))currentTab=TABS_ARR[i]||currentTab;});
+      if(currentTab!=='chat'){
+        const msgs=pool.chat||[];
+        const newMsgs=msgs.filter(m=>m.ts>lastSeenChat);
+        if(newMsgs.length>0){chatBadgeCount=newMsgs.length;updateChatBadge();}
+      }
+    }
+  }catch(e){}
   renderPredict();
   filterBtns("pfilters","predict");
   filterBtns("bfilters","board");
