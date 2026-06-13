@@ -92,6 +92,26 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
 /* rules */
 .rule-row{display:flex;gap:10px;margin-bottom:12px;align-items:flex-start}
 .rule-pts{flex-shrink:0;width:38px;padding:3px 0;border-radius:8px;text-align:center;font-size:13px;font-weight:800}
+
+/* ── CHAT ── */
+.chat-bubble{background:var(--s1);border:1px solid var(--b1);border-radius:12px;padding:10px 12px;max-width:90%}
+.chat-bubble.mine{background:var(--fa);border-color:var(--b2);align-self:flex-end}
+.chat-meta{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.chat-author{font-size:12px;font-weight:600}
+.chat-time{font-size:10px;color:var(--mu)}
+.chat-text{font-size:13px;line-height:1.5;word-break:break-word;white-space:pre-wrap}
+.chat-reactions{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.react-btn{background:var(--fa);border:1px solid var(--b1);border-radius:20px;padding:2px 7px;font-size:13px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:3px}
+.react-btn:hover{border-color:var(--b2)}
+.react-btn.active{background:rgba(0,200,122,.15);border-color:var(--b2)}
+.react-count{font-size:11px;color:var(--mu)}
+.react-add{background:none;border:1px dashed var(--b1);border-radius:20px;padding:2px 8px;font-size:13px;cursor:pointer;color:var(--mu)}
+.react-add:hover{border-color:var(--b2);color:var(--tx)}
+.emoji-picker{position:absolute;background:var(--s1);border:1px solid var(--b2);border-radius:10px;padding:8px;display:flex;flex-wrap:wrap;gap:4px;z-index:100;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+.emoji-picker span{font-size:18px;cursor:pointer;padding:3px;border-radius:4px}
+.emoji-picker span:hover{background:var(--fa)}
+.chat-del{background:none;border:none;color:var(--mu);font-size:12px;cursor:pointer;margin-left:auto;padding:0 4px;opacity:.6}
+.chat-del:hover{color:var(--red);opacity:1}
 </style>
 </head>
 <body>
@@ -120,6 +140,7 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
     <button class="tab"     onclick="goTab('standings')">Standings</button>
     <button class="tab"     onclick="goTab('rules')">Rules</button>
     <button class="tab"     onclick="goTab('admin')">Admin</button>
+    <button class="tab"     onclick="goTab('chat')">💬 Chat</button>
   </div>
 
   <div class="shell">
@@ -237,7 +258,30 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
       </div>
     </div>
 
-  </div><!-- /shell -->
+  
+    <!-- CHAT TAB -->
+    <div class="sec" id="sec-chat">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div class="sec-title" style="margin:0">Group chat</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadData().then(renderChat)">Refresh</button>
+      </div>
+      <div class="notice" style="margin-bottom:14px">
+        Chat with your group! Enter your name below to send messages.
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="lbl">Your name</label>
+        <input class="wide" id="chat-name" type="text" maxlength="24" placeholder="e.g. Ahmed" oninput="syncChatName()"/>
+      </div>
+      <div id="chat-messages" style="margin-bottom:12px;max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:8px"></div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <textarea id="chat-input" maxlength="280" placeholder="Type a message..." rows="2"
+          style="flex:1;background:var(--s2);border:1px solid var(--b2);border-radius:8px;color:var(--tx);font-family:'DM Sans',sans-serif;font-size:14px;padding:8px 10px;outline:none;resize:none;line-height:1.4"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMsg();}"></textarea>
+        <button class="btn btn-primary" onclick="sendChatMsg()" style="width:auto;padding:10px 16px;flex-shrink:0">Send</button>
+      </div>
+      <div style="font-size:11px;color:var(--mu);margin-top:6px;text-align:right">Enter to send · Shift+Enter for new line</div>
+    </div>
+</div><!-- /shell -->
 </div><!-- /app -->
 
 <div class="sync" id="sync-indicator">saving...</div>
@@ -372,12 +416,12 @@ function pts(ph,pa,rh,ra){
   return 0;
 }
 
-const defaultPool=()=>({poolName:"World Cup 2026 Predictor",adminName:"Fama",stake:5,adminPin:"1234",results:{},predictions:{}});
-const mergePool=d=>({...defaultPool(),...d,results:d.results||{},predictions:d.predictions||{}});
+const defaultPool=()=>({poolName:"World Cup 2026 Predictor",adminName:"Fama",stake:5,adminPin:"1234",results:{},predictions:{},chat:[]});
+const mergePool=d=>({...defaultPool(),...d,results:d.results||{},predictions:d.predictions||{},chat:d.chat||[]});
 
 let pool=defaultPool();
 let grpFilter={predict:"ALL",board:"ALL",admin:"ALL"};
-let sortByDate={predict:false,board:false};
+let sortByDate={predict:false,board:false,admin:false};
 let adminOk=false;
 let pollTimer=null;
 let saving=false;
@@ -496,6 +540,7 @@ function toggleDateSort(key){
   sortByDate[key]=!sortByDate[key];
   if(key==="predict")renderPredict();
   if(key==="board")renderBoard();
+  if(key==="admin")renderAdminMatches();
 }
 function setFilter(key,g){grpFilter[key]=g;if(key==="predict")renderPredict();if(key==="board")renderBoard();if(key==="admin")renderAdminMatches();}
 
@@ -531,6 +576,7 @@ function byDate(matches){
 // ── TABS ────────────────────────────────────────────────
 const TABS=["predict","myscores","board","standings","rules","admin"];
 function goTab(t){
+  if(t==='chat'){setTimeout(()=>{renderChat();if(myName&&document.getElementById('chat-name'))document.getElementById('chat-name').value=myName;},50);}
   TABS.forEach(id=>{
     document.getElementById("sec-"+id).classList.toggle("on",id===t);
     document.querySelectorAll(".tab")[TABS.indexOf(id)].classList.toggle("on",id===t);
@@ -1061,8 +1107,12 @@ function renderAdminMatches(){
       </div>`;
     }
   }
-  Object.entries(groupedFor("admin")).sort().forEach(([g,ms])=>{
-    html+=`<div class="grp-hdr">Group ${g}</div>`;
+  const adminList = sortByDate.admin ? (() => {
+    const dated=byDate(sortedByDate("admin"));
+    return Object.keys(dated).map(date=>({header:`📅 ${date}`,matches:dated[date]}));
+  })() : Object.entries(groupedFor("admin")).sort().map(([g,ms])=>({header:`Group ${g}`,matches:ms}));
+  adminList.forEach(({header,matches:ms})=>{
+    html+=`<div class="grp-hdr">${header}</div>`;
     ms.forEach(m=>{
       const r=res(m.id);
       html+=`<div class="card" style="margin-bottom:8px">
@@ -1167,6 +1217,153 @@ window.addEventListener("DOMContentLoaded",async()=>{
   await loadData();
   setLoading(false);
 });
+
+// ── CHAT ──────────────────────────────────────────────────────────────────────
+const EMOJIS=['👍','❤️','😂','😮','😢','🔥','⚽','🎉','😤','🤣'];
+let emojiPickerOpen=null;
+
+function syncChatName(){
+  const n=document.getElementById('chat-name').value;
+  // Also sync to predict name if empty
+  const pn=document.getElementById('pname');
+  if(pn&&!pn.value&&n) pn.value=n;
+  myName=n; localStorage.setItem('wc26_name',n);
+}
+
+function getChatName(){
+  return (document.getElementById('chat-name')?.value||'').trim()||myName.trim();
+}
+
+async function sendChatMsg(){
+  const name=getChatName();
+  const text=(document.getElementById('chat-input')?.value||'').trim();
+  if(!name){alert('Enter your name first.');return;}
+  if(!text) return;
+  const msg={
+    id:'msg_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    name, text,
+    ts: Date.now(),
+    reactions:{}
+  };
+  if(!pool.chat) pool.chat=[];
+  pool.chat.push(msg);
+  // Keep last 200 messages
+  if(pool.chat.length>200) pool.chat=pool.chat.slice(-200);
+  document.getElementById('chat-input').value='';
+  await saveData();
+  renderChat();
+}
+
+async function toggleReaction(msgId, emoji){
+  const name=getChatName();
+  if(!name){alert('Enter your name to react.');return;}
+  closeEmojiPicker();
+  const msg=pool.chat?.find(m=>m.id===msgId);
+  if(!msg) return;
+  if(!msg.reactions) msg.reactions={};
+  if(!msg.reactions[emoji]) msg.reactions[emoji]=[];
+  const idx=msg.reactions[emoji].indexOf(name);
+  if(idx>=0) msg.reactions[emoji].splice(idx,1);
+  else msg.reactions[emoji].push(name);
+  // Clean empty
+  if(msg.reactions[emoji].length===0) delete msg.reactions[emoji];
+  await saveData();
+  renderChat();
+}
+
+async function deleteChatMsg(msgId){
+  if(!adminOk){alert('Admin access required.');return;}
+  if(!confirm('Delete this message?')) return;
+  pool.chat=(pool.chat||[]).filter(m=>m.id!==msgId);
+  await saveData();
+  renderChat();
+}
+
+function openEmojiPicker(msgId, btnEl){
+  closeEmojiPicker();
+  emojiPickerOpen=msgId;
+  const picker=document.createElement('div');
+  picker.className='emoji-picker';
+  picker.id='emoji-picker-'+msgId;
+  EMOJIS.forEach(e=>{
+    const sp=document.createElement('span');
+    sp.textContent=e;
+    sp.title=e;
+    sp.onclick=(ev)=>{ev.stopPropagation();toggleReaction(msgId,e);};
+    picker.appendChild(sp);
+  });
+  btnEl.parentNode.style.position='relative';
+  btnEl.parentNode.appendChild(picker);
+  // Position above button on mobile
+  setTimeout(()=>{
+    const rect=picker.getBoundingClientRect();
+    if(rect.bottom>window.innerHeight) picker.style.bottom='30px';
+  },0);
+}
+
+function closeEmojiPicker(){
+  document.querySelectorAll('.emoji-picker').forEach(p=>p.remove());
+  emojiPickerOpen=null;
+}
+
+document.addEventListener('click', closeEmojiPicker);
+
+function fmtChatTime(ts){
+  const d=new Date(ts);
+  const now=new Date();
+  const diff=Math.floor((now-d)/1000);
+  if(diff<60) return 'just now';
+  if(diff<3600) return Math.floor(diff/60)+'m ago';
+  if(diff<86400) return Math.floor(diff/3600)+'h ago';
+  return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+
+function renderChat(){
+  const msgs=pool.chat||[];
+  const myN=getChatName();
+  const container=document.getElementById('chat-messages');
+  if(!container) return;
+
+  // Sync name field
+  if(myN&&document.getElementById('chat-name')&&!document.getElementById('chat-name').value){
+    document.getElementById('chat-name').value=myN;
+  }
+
+  if(!msgs.length){
+    container.innerHTML='<div style="text-align:center;padding:30px 20px;color:var(--mu);font-size:13px">No messages yet — be the first to say something! ⚽</div>';
+    return;
+  }
+
+  container.innerHTML=msgs.map(msg=>{
+    const isMe=msg.name===myN;
+    const av=avI(msg.name);
+    const reactionsHtml=Object.entries(msg.reactions||{}).filter(([,users])=>users.length>0).map(([emoji,users])=>{
+      const active=users.includes(myN);
+      const title=users.join(', ');
+      return`<button class="react-btn${active?' active':''}" onclick="toggleReaction('${msg.id}','${emoji}')" title="${title}">${emoji}<span class="react-count">${users.length}</span></button>`;
+    }).join('');
+
+    return`<div style="display:flex;flex-direction:column;${isMe?'align-items:flex-end':'align-items:flex-start'}">
+      <div class="chat-bubble${isMe?' mine':''}" style="${isMe?'border-color:var(--b2)':''}" >
+        <div class="chat-meta">
+          ${!isMe?`<div class="av" style="width:20px;height:20px;background:${AV_BG[av]};color:${AV_FG[av]};font-size:9px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">${ini(msg.name)}</div>`:''}
+          <span class="chat-author" style="color:${isMe?'var(--g)':AV_FG[av]}">${msg.name}</span>
+          <span class="chat-time">${fmtChatTime(msg.ts)}</span>
+          ${adminOk?`<button class="chat-del" onclick="deleteChatMsg('${msg.id}')" title="Delete">✕</button>`:''}
+        </div>
+        <div class="chat-text">${msg.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        <div class="chat-reactions" id="reactions-${msg.id}">
+          ${reactionsHtml}
+          <button class="react-add" onclick="event.stopPropagation();openEmojiPicker('${msg.id}',this)" title="Add reaction">+ 😊</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Auto-scroll to bottom
+  container.scrollTop=container.scrollHeight;
+}
+// ── END CHAT ──────────────────────────────────────────────────────────────────
 </script>
 </body>
 </html>
