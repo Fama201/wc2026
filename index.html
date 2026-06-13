@@ -135,12 +135,12 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
 
   <div class="tabs">
     <button class="tab on"  onclick="goTab('predict')">Predict</button>
+    <button class="tab"     onclick="goTab('chat')">💬 Chat</button>
     <button class="tab"     onclick="goTab('myscores')">My Scores</button>
     <button class="tab"     onclick="goTab('board')">Board</button>
     <button class="tab"     onclick="goTab('standings')">Standings</button>
     <button class="tab"     onclick="goTab('rules')">Rules</button>
     <button class="tab"     onclick="goTab('admin')">Admin</button>
-    <button class="tab"     onclick="goTab('chat')">💬 Chat</button>
   </div>
 
   <div class="shell">
@@ -423,6 +423,8 @@ let pool=defaultPool();
 let grpFilter={predict:"ALL",board:"ALL",admin:"ALL"};
 let sortByDate={predict:false,board:false,admin:false};
 let adminOk=false;
+let lastSeenChat=0;
+let chatBadgeCount=0;
 let pollTimer=null;
 let saving=false;
 let myName=localStorage.getItem("wc26_name")||"";
@@ -574,9 +576,9 @@ function byDate(matches){
 }
 
 // ── TABS ────────────────────────────────────────────────
-const TABS=["predict","myscores","board","standings","rules","admin"];
+const TABS=["predict","chat","myscores","board","standings","rules","admin"];
 function goTab(t){
-  if(t==='chat'){setTimeout(()=>{renderChat();if(myName&&document.getElementById('chat-name'))document.getElementById('chat-name').value=myName;},50);}
+  if(t==='chat'){setTimeout(()=>{renderChat();if(myName&&document.getElementById('chat-name'))document.getElementById('chat-name').value=myName;},50);lastSeenChat=Date.now();chatBadgeCount=0;updateChatBadge();}
   TABS.forEach(id=>{
     document.getElementById("sec-"+id).classList.toggle("on",id===t);
     document.querySelectorAll(".tab")[TABS.indexOf(id)].classList.toggle("on",id===t);
@@ -587,8 +589,8 @@ function goTab(t){
   if(t==="admin")renderAdmin();
   if(t==="rules")renderRules();
   clearInterval(pollTimer);
-  if(["board","standings","myscores"].includes(t)){
-    pollTimer=setInterval(()=>{loadData().then(()=>{if(t==="board")renderBoard();if(t==="standings")renderStandings();if(t==="myscores")renderMyScores();});},POLL_MS);
+  if(["board","standings","myscores","chat"].includes(t)){
+    pollTimer=setInterval(()=>{loadData().then(()=>{if(t==="board")renderBoard();if(t==="standings")renderStandings();if(t==="myscores")renderMyScores();if(t==="chat")renderChat();});},POLL_MS);
   }
 }
 
@@ -771,9 +773,34 @@ function autoProgressKnockouts() {
 }
 
 
+function updateChatBadge(){
+  const tabs=document.querySelectorAll('.tab');
+  const TABS_ARR=["predict","chat","myscores","board","standings","rules","admin"];
+  const chatIdx=TABS_ARR.indexOf("chat");
+  if(chatIdx<0||!tabs[chatIdx]) return;
+  const existing=tabs[chatIdx].querySelector('.tab-badge');
+  if(chatBadgeCount>0){
+    if(existing){existing.textContent=chatBadgeCount;}
+    else{const b=document.createElement('span');b.className='tab-badge';b.textContent=chatBadgeCount;tabs[chatIdx].appendChild(b);}
+  } else {
+    if(existing) existing.remove();
+  }
+}
+
 function renderAll(){
   autoProgressKnockouts();
   updateHero();
+  // Update chat badge if not on chat tab
+  const activeTab=document.querySelector('.tab.on');
+  const tabsArr=document.querySelectorAll('.tab');
+  const TABS_ARR=["predict","chat","myscores","board","standings","rules","admin"];
+  let currentTab='predict';
+  tabsArr.forEach((t,i)=>{if(t.classList.contains('on'))currentTab=TABS_ARR[i];});
+  if(currentTab!=='chat'){
+    const msgs=pool.chat||[];
+    const newMsgs=msgs.filter(m=>m.ts>lastSeenChat);
+    if(newMsgs.length>0){chatBadgeCount=newMsgs.length;updateChatBadge();}
+  }
   renderPredict();
   filterBtns("pfilters","predict");
   filterBtns("bfilters","board");
@@ -1234,7 +1261,7 @@ function getChatName(){
   return (document.getElementById('chat-name')?.value||'').trim()||myName.trim();
 }
 
-async function sendChatMsg(){
+async async function sendChatMsg(){
   const name=getChatName();
   const text=(document.getElementById('chat-input')?.value||'').trim();
   if(!name){alert('Enter your name first.');return;}
