@@ -288,7 +288,7 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
 
 <script>
 // ── CONFIG ──────────────────────────────────────────────
-const GIST_ID    = '4e8d248f99054d96b2b9f25e03deafa6';
+const GIST_ID='4e8d248f99054d96b2b9f25e03deafa6';
 const GIST_FILE  = 'wc2026pool.json';
 const POLL_MS    = 20000;
 const _a='DPau_phg',_b='a9bwCbqJ',_c='YT4CFOV7',_d='ipxB7uaZ',_e='ZpOLz3iu';
@@ -454,15 +454,18 @@ async function gistWrite(data){
 async function loadData(){
   try{
     const d=await gistRead();
-    if(d){pool=mergePool(d);}
-    else{pool=defaultPool();}
-    autoProgressKnockouts();
+    pool=d?mergePool(d):defaultPool();
+    autoProgress();
     renderAll();
+    document.getElementById("loading").style.display="none";
+    document.getElementById("app").style.display="block";
   }catch(e){
     console.error("load error",e);
-    setLoading(false,"Failed to load. Try refreshing the page.");
+    document.getElementById("loading-msg").textContent="Failed to load. Try refreshing.";
+    document.getElementById("loading").style.display="none";
+    document.getElementById("app").style.display="block";
+    renderAll();
   }
-  setLoading(false);
 }
 
 async function saveData(){
