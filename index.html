@@ -481,11 +481,7 @@ async function saveData(){
 function showSync(on){
   document.getElementById("sync-indicator").style.display=on?"block":"none";
 }
-function setLoading(show,msg){
-  document.getElementById("loading").style.display=show?"flex":"none";
-  document.getElementById("app").style.display=show?"none":"block";
-  if(msg)document.getElementById("loading-msg").textContent=msg;
-}
+
 
 // ── HELPERS ─────────────────────────────────────────────
 const res=mid=>pool.results?.[mid]||{h:null,a:null,locked:false};
@@ -1248,11 +1244,10 @@ async function resetAll(){
 // ── INIT ────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded",async()=>{
   if(myName){
-    document.getElementById("pname").value=myName;
-    document.getElementById("myname").value=myName;
+    const pn=document.getElementById("pname");if(pn)pn.value=myName;
+    const mn=document.getElementById("myname");if(mn)mn.value=myName;
   }
   await loadData();
-  setLoading(false);
 });
 
 // ── CHAT ──────────────────────────────────────────────────────────────────────
