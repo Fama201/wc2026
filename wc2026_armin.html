@@ -377,7 +377,7 @@ const mergePool=d=>({...defaultPool(),...d,results:d.results||{},predictions:d.p
 
 let pool=defaultPool();
 let grpFilter={predict:"ALL",board:"ALL",admin:"ALL"};
-let sortByDate={predict:false,board:false};
+let sortByDate={predict:false,board:false,admin:false};
 let adminOk=false;
 let pollTimer=null;
 let saving=false;
@@ -496,6 +496,7 @@ function toggleDateSort(key){
   sortByDate[key]=!sortByDate[key];
   if(key==="predict")renderPredict();
   if(key==="board")renderBoard();
+  if(key==="admin")renderAdminMatches();
 }
 function setFilter(key,g){grpFilter[key]=g;if(key==="predict")renderPredict();if(key==="board")renderBoard();if(key==="admin")renderAdminMatches();}
 
@@ -1061,8 +1062,12 @@ function renderAdminMatches(){
       </div>`;
     }
   }
-  Object.entries(groupedFor("admin")).sort().forEach(([g,ms])=>{
-    html+=`<div class="grp-hdr">Group ${g}</div>`;
+  const adminList = sortByDate.admin ? (() => {
+    const dated=byDate(sortedByDate("admin"));
+    return Object.keys(dated).map(date=>([`📅 ${date}`,dated[date]]));
+  })() : Object.entries(groupedFor("admin")).sort().map(([g,ms])=>([`Group ${g}`,ms]));
+  adminList.forEach(([header,ms])=>{
+    html+=`<div class="grp-hdr">${header}</div>`;
     ms.forEach(m=>{
       const r=res(m.id);
       html+=`<div class="card" style="margin-bottom:8px">
