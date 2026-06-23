@@ -92,6 +92,20 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
 /* rules */
 .rule-row{display:flex;gap:10px;margin-bottom:12px;align-items:flex-start}
 .rule-pts{flex-shrink:0;width:38px;padding:3px 0;border-radius:8px;text-align:center;font-size:13px;font-weight:800}
+
+/* ── ACCORDION ── */
+.match-header-row{display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;-webkit-user-select:none}
+.match-header-row:active{opacity:.8}
+.match-summary{display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden}
+.match-summary-teams{font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tx)}
+.match-summary-score{font-family:monospace;font-size:14px;font-weight:700;color:var(--g);flex-shrink:0}
+.match-summary-pts{flex-shrink:0}
+.accordion-arrow{font-size:12px;color:var(--mu);flex-shrink:0;transition:transform .2s;margin-left:6px}
+.accordion-arrow.open{transform:rotate(180deg)}
+.accordion-body{overflow:hidden;transition:max-height .25s ease,opacity .2s ease}
+.accordion-body.collapsed{max-height:0;opacity:0;pointer-events:none}
+.accordion-body.expanded{max-height:2000px;opacity:1}
+
 </style>
 </head>
 <body>
@@ -725,6 +739,28 @@ function autoProgressKnockouts() {
   });
 }
 
+
+
+// ── ACCORDION STATE ──
+// key: matchId, value: true=expanded
+const accordionState = {};
+function isExpanded(mid) {
+  // Open matches expanded by default, locked/final collapsed by default
+  if (mid in accordionState) return accordionState[mid];
+  return !isLocked(mid);
+}
+function toggleAccordion(mid) {
+  accordionState[mid] = !isExpanded(mid);
+  // Re-render only the specific card for performance
+  const arrow = document.getElementById('arrow_'+mid);
+  const body  = document.getElementById('abody_'+mid);
+  if (arrow && body) {
+    const open = accordionState[mid];
+    arrow.classList.toggle('open', open);
+    body.classList.toggle('collapsed', !open);
+    body.classList.toggle('expanded', open);
+  }
+}
 
 function renderAll(){
   autoProgressKnockouts();
