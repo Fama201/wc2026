@@ -222,6 +222,10 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
         <div class="filters" id="afilters"></div>
         <div id="admin-matches"></div>
         <hr class="divider">
+        <div style="font-size:14px;font-weight:700;color:var(--g);margin-bottom:6px">Knockout fixtures · set teams manually</div>
+        <div style="font-size:12px;color:var(--mu);margin-bottom:10px">For matches still showing placeholders like "3rd A/B/C/D". Type the real teams, hit Save — it updates everywhere and survives a refresh.</div>
+        <div id="admin-ko"></div>
+        <hr class="divider">
         <div style="font-size:14px;font-weight:700;color:var(--g);margin-bottom:6px">Manage players</div>
         <div style="font-size:12px;color:var(--mu);margin-bottom:10px">Remove a player and all their predictions.</div>
         <div id="admin-players"></div>
@@ -232,6 +236,11 @@ label.lbl{font-size:12px;color:var(--mu);display:block;margin-bottom:4px}
           <button class="btn btn-ghost" onclick="changePin()">Set</button>
         </div>
         <hr class="divider">
+        <div style="font-size:14px;font-weight:700;color:var(--g);margin-bottom:6px">Backup &amp; restore</div>
+        <div style="font-size:12px;color:var(--mu);margin-bottom:10px">Download a full copy of the pool, or restore it from a saved backup.</div>
+        <button class="btn btn-ghost wide" style="margin-bottom:8px" onclick="exportBackup()">⬇️  Download backup (JSON)</button>
+        <textarea id="restore-box" placeholder="Paste a backup JSON here to restore…" style="width:100%;min-height:70px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;color:var(--tx);padding:10px;font-size:12px;font-family:monospace;margin-bottom:8px;box-sizing:border-box"></textarea>
+        <button class="btn btn-ghost wide" style="margin-bottom:10px" onclick="importBackup()">⬆️  Restore from pasted JSON</button>
         <hr class="divider">
         <button class="btn wide" style="background:transparent;border:1px solid rgba(248,113,113,.3);color:var(--red);margin-bottom:10px" onclick="resetAll()">Reset all data</button>
       </div>
@@ -372,8 +381,8 @@ function pts(ph,pa,rh,ra){
   return 0;
 }
 
-const defaultPool=()=>({poolName:"World Cup 2026 Predictor",adminName:"Tony",stake:5,adminPin:"1234",results:{},predictions:{}});
-const mergePool=d=>({...defaultPool(),...d,results:d.results||{},predictions:d.predictions||{}});
+const defaultPool=()=>({poolName:"World Cup 2026 Predictor",adminName:"Tony",stake:5,adminPin:"1234",results:{},predictions:{},koTeams:{}});
+const mergePool=d=>({...defaultPool(),...d,results:d.results||{},predictions:d.predictions||{},koTeams:d.koTeams||{}});
 
 let pool=defaultPool();
 let grpFilter={predict:"ALL",board:"ALL",admin:"ALL"};
@@ -381,6 +390,8 @@ let sortByDate={predict:false,board:false,admin:false};
 let adminOk=false;
 let pollTimer=null;
 let saving=false;
+let loadedOK=false;
+let curTab="predict";
 let myName=localStorage.getItem('wc26_name_tony')||"";
 
 // ── GIST API ────────────────────────────────────────────
@@ -409,8 +420,9 @@ async function loadData(){
     const d=await gistRead();
     if(d){pool=mergePool(d);}
     else{pool=defaultPool();}
-    autoProgressKnockouts();
+    resolveKO();
     renderAll();
+    loadedOK=true;
   }catch(e){
     console.error("load error",e);
     setLoading(false,"Failed to load. Try refreshing the page.");
@@ -418,14 +430,120 @@ async function loadData(){
   setLoading(false);
 }
 
-async function saveData(){
+function countPlayers(p){
+  const s=new Set();
+  Object.values((p&&p.predictions)||{}).forEach(mp=>Object.keys(mp).forEach(n=>s.add(n)));
+  return s.size;
+}
+function mergeForSave(remote,local){
+  const out={...remote,poolName:local.poolName,adminName:local.adminName,stake:local.stake,adminPin:local.adminPin};
+  out.results={...((remote&&remote.results)||{}),...((local&&local.results)||{})};
+  out.koTeams={...((remote&&remote.koTeams)||{}),...((local&&local.koTeams)||{})};
+  const preds={};
+  const mids=new Set([...Object.keys((remote&&remote.predictions)||{}),...Object.keys((local&&local.predictions)||{})]);
+  mids.forEach(mid=>{preds[mid]={...(((remote&&remote.predictions)||{})[mid]||{}),...(((local&&local.predictions)||{})[mid]||{})};});
+  out.predictions=preds;
+  return out;
+}
+function escAttr(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");}
+async function saveData(opts){
+  opts=opts||{};
   if(saving)return;
+  if(!loadedOK){alert("Not saving yet — the pool hasn't finished loading. Refresh the page and try again.");return;}
   saving=true;
   showSync(true);
-  try{await gistWrite(pool);}
-  catch(e){console.error("save error",e);}
+  try{
+    if(!opts.replace){
+      let remote=null;
+      try{remote=await gistRead();}catch(e){remote=null;}
+      if(remote){
+        if(opts.scope==="preds"&&opts.player){
+          const merged=mergePool(remote);
+          Object.keys(pool.predictions||{}).forEach(mid=>{
+            const lp=(pool.predictions[mid]||{})[opts.player];
+            if(lp!==undefined){
+              if(!merged.predictions[mid])merged.predictions[mid]={};
+              merged.predictions[mid][opts.player]=lp;
+            }
+          });
+          pool=merged;
+        }else{
+          pool=mergeForSave(remote,pool);
+        }
+        if(countPlayers(pool)<countPlayers(remote))throw new Error("SHRINK_BLOCKED");
+      }
+    }
+    await gistWrite(pool);
+  }catch(e){
+    console.error("save error",e);
+    if(String((e&&e.message)||"").indexOf("SHRINK_BLOCKED")>=0){
+      alert("Save blocked — this change would remove players who are in the live pool (you're probably on an old tab). Refresh the page to load the latest data, then try again.");
+    }else{
+      alert("Save failed — check your connection and try again.");
+    }
+  }
   saving=false;
   showSync(false);
+}
+async function exportBackup(){
+  let data=pool;
+  try{const r=await gistRead();if(r)data=mergePool(r);}catch(e){}
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  const ts=new Date().toISOString().slice(0,16).replace(/[:T]/g,"-");
+  a.href=URL.createObjectURL(blob);
+  a.download="backup_"+String(data.adminName||"pool").toLowerCase()+"_"+ts+".json";
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+async function importBackup(){
+  const box=document.getElementById("restore-box");
+  const txt=((box&&box.value)||"").trim();
+  if(!txt){alert("Paste a backup JSON into the box first.");return;}
+  let data;
+  try{data=JSON.parse(txt);}catch(e){alert("That doesn't look like valid JSON — check you copied the whole file.");return;}
+  if(typeof data!=="object"||data===null||!data.predictions){
+    if(!confirm("This JSON has no predictions — it may not be a pool backup. Restore anyway?"))return;
+  }
+  const n=countPlayers(data);
+  if(!confirm("Restore this backup?\n\nThis REPLACES the live pool with "+n+" player(s). Current live data will be overwritten."))return;
+  pool=mergePool(data);
+  await saveData({replace:true});
+  if(box)box.value="";
+  renderAll();
+  alert("Restore complete — "+n+" player(s) now live.");
+}
+function renderAdminKO(){
+  const el=document.getElementById("admin-ko");
+  if(!el)return;
+  resolveKO();
+  const ko=MATCHES.filter(m=>["R32","R16","QF","SF","3RD","FNL"].indexOf(m.grp)>=0);
+  if(!ko.length){el.innerHTML='<div style="font-size:13px;color:var(--mu);padding:6px 0">No knockout matches found.</div>';return;}
+  el.innerHTML=ko.map(m=>{
+    const t=(pool.koTeams&&pool.koTeams[m.id])||{};
+    const hv=escAttr(t.home||m.home),av=escAttr(t.away||m.away);
+    const manual=(t.home||t.away)?'<span style="font-size:11px;color:var(--g)"> · set manually</span>':'';
+    return '<div class="card" style="margin-bottom:8px">'+
+      '<div class="match-info" style="margin-bottom:6px">#'+m.no+' · '+m.grp+' · '+m.date+' '+m.time+manual+'</div>'+
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+      '<input class="wide" style="flex:1;min-width:90px" id="koh_'+m.id+'" value="'+hv+'" placeholder="Home team"/>'+
+      '<span class="vs">vs</span>'+
+      '<input class="wide" style="flex:1;min-width:90px" id="koa_'+m.id+'" value="'+av+'" placeholder="Away team"/>'+
+      '<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="saveKO(\''+m.id+'\')">Save</button>'+
+      '</div></div>';
+  }).join("");
+}
+async function saveKO(mid){
+  const hEl=document.getElementById("koh_"+mid),aEl=document.getElementById("koa_"+mid);
+  const h=((hEl&&hEl.value)||"").trim(),a=((aEl&&aEl.value)||"").trim();
+  if(!pool.koTeams)pool.koTeams={};
+  pool.koTeams[mid]={home:h,away:a};
+  resolveKO();
+  await saveData();
+  renderAll();
+  renderAdminKO();
+  const mm=MATCHES.find(m=>m.id===mid)||{};
+  alert("Saved teams for match #"+(mm.no||mid)+".");
 }
 
 function showSync(on){
@@ -532,6 +650,7 @@ function byDate(matches){
 // ── TABS ────────────────────────────────────────────────
 const TABS=["predict","myscores","board","standings","rules","admin"];
 function goTab(t){
+  curTab=t;
   TABS.forEach(id=>{
     document.getElementById("sec-"+id).classList.toggle("on",id===t);
     document.querySelectorAll(".tab")[TABS.indexOf(id)].classList.toggle("on",id===t);
@@ -666,6 +785,17 @@ function getMatchLoser(mid) {
   return null;
 }
 
+function applyManualKO(){
+  if(!pool.koTeams)return;
+  Object.keys(pool.koTeams).forEach(mid=>{
+    const m=MATCHES.find(x=>x.id===mid);
+    if(!m)return;
+    const t=pool.koTeams[mid]||{};
+    if(t.home)m.home=t.home;
+    if(t.away)m.away=t.away;
+  });
+}
+function resolveKO(){applyManualKO();autoProgressKnockouts();applyManualKO();}
 function autoProgressKnockouts() {
   // 1. Fill R32 slots from group standings (deterministic ones only)
   Object.entries(R32_GROUP_SLOTS).forEach(([mid, slots]) => {
@@ -727,7 +857,7 @@ function autoProgressKnockouts() {
 
 
 function renderAll(){
-  autoProgressKnockouts();
+  resolveKO();
   updateHero();
   renderPredict();
   filterBtns("pfilters","predict");
@@ -824,7 +954,7 @@ async function savePreds(){
     if(!pool.predictions[m.id])pool.predictions[m.id]={};
     pool.predictions[m.id][pn]={h:h===""?0:+h,a:a===""?0:+a};
   });
-  await saveData();
+  await saveData({scope:"preds",player:pn});
   fb("Saved! Good luck "+pn+" ⚽");
   setTimeout(()=>fb(""),3000);
 }
@@ -1029,6 +1159,7 @@ function tryPin(){
     renderAdminMatches();
     filterBtns("afilters","admin");
     renderAdminPlayers();
+    renderAdminKO();
   }
 }
 function renderAdmin(){
@@ -1039,6 +1170,7 @@ function renderAdmin(){
   renderAdminMatches();
   filterBtns("afilters","admin");
   renderAdminPlayers();
+    renderAdminKO();
 }
 async function saveSettings(){
   pool.poolName=document.getElementById("set-name").value||"World Cup 2026 Predictor";
@@ -1050,7 +1182,7 @@ async function saveSettings(){
 }
 function renderAdminMatches(){
   filterBtns("afilters","admin");
-  autoProgressKnockouts();
+  resolveKO();
   let html="";
   // Show helper banner for knockout rounds
   const ko=['R32','R16','QF','SF','3RD','FNL'];
@@ -1135,14 +1267,19 @@ function renderAdminPlayers(){
 
 async function deletePlayer(name){
   if(!confirm(`Remove "${name}" and all their predictions? This cannot be undone.`))return;
-  Object.keys(pool.predictions).forEach(mid=>{
-    if(pool.predictions[mid][name]!==undefined){
-      delete pool.predictions[mid][name];
-      if(Object.keys(pool.predictions[mid]).length===0)delete pool.predictions[mid];
+  let base=pool;
+  try{const r=await gistRead();if(r)base=mergePool(r);}catch(e){}
+  Object.keys(base.predictions).forEach(mid=>{
+    if(base.predictions[mid][name]!==undefined){
+      delete base.predictions[mid][name];
+      if(Object.keys(base.predictions[mid]).length===0)delete base.predictions[mid];
     }
   });
-  await saveData();
+  pool=base;
+  await saveData({replace:true});
+  renderAll();
   renderAdminPlayers();
+    renderAdminKO();
   updateHero();
   renderStandings();
 }
@@ -1158,7 +1295,7 @@ async function changePin(){
 async function resetAll(){
   if(!confirm("Reset ALL data — predictions, results, everything?"))return;
   pool=defaultPool();
-  await saveData();
+  await saveData({replace:true});
   renderAll();
   alert("Reset done.");
 }
@@ -1171,6 +1308,12 @@ window.addEventListener("DOMContentLoaded",async()=>{
   }
   await loadData();
   setLoading(false);
+  document.addEventListener("visibilitychange",()=>{
+    if(document.hidden)return;
+    if(["board","standings","myscores"].indexOf(curTab)>=0){
+      loadData().then(()=>{if(curTab==="board")renderBoard();if(curTab==="standings")renderStandings();if(curTab==="myscores")renderMyScores();});
+    }
+  });
 });
 </script>
 </body>
